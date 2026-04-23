@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../../lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import Swal from "sweetalert2";
 import { toastSuccess, toastError } from "../../lib/notify";
+import PageHeader from "../../components/admin/PageHeader";
 
 const LiveMonitor = () => {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const [kelasFilter, setKelasFilter] = useState("all");
 
-  // Heartbeat local untuk update 'waktu diam' di UI setiap detik
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -23,54 +24,83 @@ const LiveMonitor = () => {
     return () => unsub();
   }, []);
 
+  const getIdleSeconds = (session) => {
+    const lastActive = session.lastActive || session.startedAt;
+    if (!lastActive) return 999999;
+    const last = typeof lastActive.toMillis === "function" ? lastActive.toMillis() : lastActive;
+    return Math.floor((now - last) / 1000);
+  };
+
+  // ─── Derived stats ──────────────────────────────────────
+  const stats = useMemo(() => {
+    let online = 0,
+      idle = 0,
+      offline = 0,
+      warnings = 0;
+    sessions.forEach((s) => {
+      const idleSec = getIdleSeconds(s);
+      if (idleSec > 120) offline += 1;
+      else if (idleSec > 45) idle += 1;
+      else online += 1;
+      if ((s.tabSwitches || 0) > 0) warnings += (s.tabSwitches || 0);
+    });
+    return { online, idle, offline, warnings, total: sessions.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, now]);
+
+  // Unique classes for filter
+  const classOptions = useMemo(() => {
+    const set = new Set();
+    sessions.forEach((s) => s.kelas && set.add(s.kelas));
+    return Array.from(set).sort();
+  }, [sessions]);
+
+  const visibleSessions = useMemo(() => {
+    if (kelasFilter === "all") return sessions;
+    return sessions.filter((s) => s.kelas === kelasFilter);
+  }, [sessions, kelasFilter]);
+
+  // ─── Actions ────────────────────────────────────────────
   const handleForceFinish = async (session) => {
     const idleSec = getIdleSeconds(session);
-    const isOffline = idleSec > 120; // 2 menit tidak ada heartbeat
-
-    // Jika offline ATAU sudah pernah dipaksa tapi belum hilang (mungkin siswa offline/stuck)
-    // Tawarkan opsi hapus permanen
+    const isOffline = idleSec > 120;
     if (isOffline || session.forceSubmit) {
       const { isConfirmed } = await Swal.fire({
         title: isOffline ? "Hapus Sesi Offline?" : "Hapus Sesi Macet?",
-        text: isOffline 
-          ? `Siswa ${session.studentName} tampaknya sudah menutup browser atau tidak aktif lebih dari 2 menit. Hapus sesi ini secara permanen?`
-          : `Sesi ${session.studentName} tampaknya macet. Hapus sesi ini secara permanen dari monitor?`,
+        text: isOffline
+          ? `Siswa ${session.studentName} tidak aktif lebih dari 2 menit. Hapus sesi permanen?`
+          : `Sesi ${session.studentName} tampaknya macet. Hapus permanen?`,
         icon: "question",
         showCancelButton: true,
         confirmButtonColor: "#ef4444",
-        confirmButtonText: "Ya, Hapus Permanen",
+        confirmButtonText: "Ya, Hapus",
         cancelButtonText: "Batal",
       });
-
       if (isConfirmed) {
         try {
           await deleteDoc(doc(db, "sessions", session.id));
-          toastSuccess(`Sesi ${session.studentName} berhasil dihapus.`);
+          toastSuccess(`Sesi ${session.studentName} dihapus.`);
         } catch (err) {
           toastError("Gagal menghapus sesi: " + err.message);
         }
       }
       return;
     }
-
     const { isConfirmed } = await Swal.fire({
       title: "Paksa Selesai?",
-      text: `Siswa ${session.studentName} akan dipaksa mengakhiri ujian dan nilainya akan langsung dihitung.`,
+      text: `Siswa ${session.studentName} akan dipaksa mengakhiri ujian.`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#ef4444",
       confirmButtonText: "Ya, Akhiri",
       cancelButtonText: "Batal",
     });
-
     if (isConfirmed) {
       try {
-        await updateDoc(doc(db, "sessions", session.id), {
-          forceSubmit: true,
-        });
-        toastSuccess(`Perintah paksa selesai dikirim ke ${session.studentName}`);
+        await updateDoc(doc(db, "sessions", session.id), { forceSubmit: true });
+        toastSuccess(`Perintah dikirim ke ${session.studentName}`);
       } catch (err) {
-        toastError("Gagal mengirim perintah: " + err.message);
+        toastError("Gagal: " + err.message);
       }
     }
   };
@@ -85,18 +115,14 @@ const LiveMonitor = () => {
       confirmButtonText: "Kirim",
       cancelButtonText: "Batal",
     });
-
     if (isConfirmed && message) {
       try {
         await updateDoc(doc(db, "sessions", session.id), {
-          adminMessage: {
-            text: message,
-            sentAt: Date.now(),
-          },
+          adminMessage: { text: message, sentAt: Date.now() },
         });
         toastSuccess("Pesan terkirim!");
       } catch (err) {
-        toastError("Gagal mengirim pesan: " + err.message);
+        toastError("Gagal: " + err.message);
       }
     }
   };
@@ -111,99 +137,79 @@ const LiveMonitor = () => {
       confirmButtonText: "Tambah",
       cancelButtonText: "Batal",
       preConfirm: (val) => {
-        if (!val || val <= 0) {
-          Swal.showValidationMessage("Masukkan angka lebih dari 0");
-        }
+        if (!val || val <= 0) Swal.showValidationMessage("Masukkan angka lebih dari 0");
         return val;
       },
     });
-
     if (isConfirmed && minutes) {
       try {
         await updateDoc(doc(db, "sessions", session.id), {
           timeLeft: (session.timeLeft || 0) + parseInt(minutes) * 60,
         });
-        toastSuccess(`Waktu ${session.studentName} berhasil ditambah ${minutes} menit`);
+        toastSuccess(`Waktu ${session.studentName} +${minutes} menit`);
       } catch (err) {
-        toastError("Gagal menambah waktu: " + err.message);
+        toastError("Gagal: " + err.message);
       }
     }
   };
 
   const handleBroadcastMessage = async () => {
     if (sessions.length === 0) return;
-    
     const { value: message, isConfirmed } = await Swal.fire({
       title: "Pesan ke Semua Siswa",
-      text: `Pesan ini akan dikirim ke ${sessions.length} siswa yang sedang aktif.`,
+      text: `Pesan akan dikirim ke ${sessions.length} siswa aktif.`,
       input: "text",
       inputPlaceholder: "Contoh: Sisa waktu 10 menit lagi...",
       showCancelButton: true,
       confirmButtonText: "Kirim Semua",
       cancelButtonText: "Batal",
     });
-
     if (isConfirmed && message) {
       try {
-        const promises = sessions.map(s => 
-          updateDoc(doc(db, "sessions", s.id), {
-            adminMessage: {
-              text: message,
-              sentAt: Date.now(),
-            },
-          })
+        await Promise.all(
+          sessions.map((s) =>
+            updateDoc(doc(db, "sessions", s.id), {
+              adminMessage: { text: message, sentAt: Date.now() },
+            }),
+          ),
         );
-        await Promise.all(promises);
-        toastSuccess("Pesan broadcast terkirim!");
+        toastSuccess("Broadcast terkirim!");
       } catch (err) {
-        toastError("Gagal mengirim broadcast: " + err.message);
+        toastError("Gagal broadcast: " + err.message);
       }
     }
   };
 
   const handleBulkCleanup = async () => {
-    const offlineSessions = sessions.filter(s => getIdleSeconds(s) > 120);
+    const offlineSessions = sessions.filter((s) => getIdleSeconds(s) > 120);
     if (offlineSessions.length === 0) {
-      toastSuccess("Tidak ada sesi offline yang perlu dibersihkan.");
+      toastSuccess("Tidak ada sesi offline.");
       return;
     }
-
     const { isConfirmed } = await Swal.fire({
       title: "Bersihkan Sesi Offline?",
-      text: `Hapus ${offlineSessions.length} sesi yang terdeteksi sudah tidak aktif?`,
+      text: `Hapus ${offlineSessions.length} sesi yang tidak aktif?`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#ef4444",
       confirmButtonText: "Ya, Bersihkan",
       cancelButtonText: "Batal",
     });
-
     if (isConfirmed) {
       try {
-        const promises = offlineSessions.map(s => deleteDoc(doc(db, "sessions", s.id)));
-        await Promise.all(promises);
-        toastSuccess(`${offlineSessions.length} sesi offline berhasil dibersihkan.`);
+        await Promise.all(offlineSessions.map((s) => deleteDoc(doc(db, "sessions", s.id))));
+        toastSuccess(`${offlineSessions.length} sesi offline dibersihkan.`);
       } catch (err) {
-        toastError("Gagal membersihkan sesi: " + err.message);
+        toastError("Gagal: " + err.message);
       }
     }
   };
 
   const fmtTime = (sec = 0) => {
-    const m = Math.floor(sec / 60)
-      .toString()
-      .padStart(2, "0");
+    const m = Math.floor(sec / 60).toString().padStart(2, "0");
     const s = (sec % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
-
-  const getIdleSeconds = (session) => {
-    const lastActive = session.lastActive || session.startedAt;
-    if (!lastActive) return 999999; // Sangat lama jika tidak ada data sama sekali
-    const last = typeof lastActive.toMillis === "function" ? lastActive.toMillis() : lastActive;
-    return Math.floor((now - last) / 1000);
-  };
-
   const fmtIdleTime = (sec) => {
     if (sec > 86400) return "> 1 hari";
     if (sec > 3600) return `${Math.floor(sec / 3600)} jam`;
@@ -214,57 +220,113 @@ const LiveMonitor = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800">Live Monitor</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">
-            Pantau dan kelola aktivitas ujian siswa secara real-time
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleBroadcastMessage}
-            disabled={sessions.length === 0}
-            className="flex items-center gap-2 rounded-xl bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-100 disabled:opacity-50"
-          >
-            <i className="fas fa-bullhorn" />
-            Pesan ke Semua
-          </button>
-          <button
-            onClick={handleBulkCleanup}
-            className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200"
-          >
-            <i className="fas fa-broom" />
-            Bersihkan Offline
-          </button>
-          <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-1.5">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
-            <span className="text-xs font-bold text-green-700">
-              {sessions.length} Aktif
-            </span>
-          </div>
-        </div>
+      <PageHeader
+        icon="fa-satellite-dish"
+        iconTone="sky"
+        title="Live Monitor"
+        subtitle="Pantau dan kelola aktivitas ujian siswa secara real-time"
+        badge={
+          stats.total > 0
+            ? { label: `${stats.total} Sesi`, tone: "sky", icon: "fa-circle" }
+            : null
+        }
+        actions={
+          <>
+            <button
+              onClick={handleBroadcastMessage}
+              disabled={sessions.length === 0}
+              className="flex items-center gap-2 rounded-xl bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-600 border border-indigo-100 transition hover:bg-indigo-100 disabled:opacity-50"
+            >
+              <i className="fas fa-bullhorn" /> Broadcast
+            </button>
+            <button
+              onClick={handleBulkCleanup}
+              className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-600 border border-slate-200 transition hover:bg-slate-200"
+            >
+              <i className="fas fa-broom" /> Bersihkan Offline
+            </button>
+          </>
+        }
+      />
+
+      {/* ══════ LIVE STATS STRIP ══════ */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatPill
+          icon="fa-circle-dot"
+          tone="emerald"
+          label="Online"
+          value={stats.online}
+          pulse
+        />
+        <StatPill
+          icon="fa-hourglass-half"
+          tone="amber"
+          label="Diam"
+          value={stats.idle}
+        />
+        <StatPill
+          icon="fa-plug-circle-xmark"
+          tone="slate"
+          label="Offline"
+          value={stats.offline}
+        />
+        <StatPill
+          icon="fa-triangle-exclamation"
+          tone={stats.warnings > 0 ? "rose" : "slate"}
+          label="Pelanggaran"
+          value={stats.warnings}
+        />
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <div
-              key={i}
-              className="h-20 animate-pulse rounded-2xl bg-slate-100"
-            />
+      {/* ══════ CLASS FILTER ══════ */}
+      {classOptions.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            Filter Kelas
+          </span>
+          <button
+            onClick={() => setKelasFilter("all")}
+            className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+              kelasFilter === "all"
+                ? "bg-indigo-600 text-white shadow"
+                : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Semua
+          </button>
+          {classOptions.map((k) => (
+            <button
+              key={k}
+              onClick={() => setKelasFilter(k)}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                kelasFilter === k
+                  ? "bg-indigo-600 text-white shadow"
+                  : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {k}
+            </button>
           ))}
         </div>
-      ) : sessions.length === 0 ? (
+      )}
+
+      {/* ══════ CONTENT ══════ */}
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-48 animate-pulse rounded-[22px] bg-white border border-slate-200" />
+          ))}
+        </div>
+      ) : visibleSessions.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-slate-200 bg-white py-24 text-center shadow-sm">
           <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-slate-100 shadow-inner">
             <i className="fas fa-satellite-dish text-3xl text-slate-400" />
           </div>
           <div>
             <div className="font-semibold text-slate-700">
-              Tidak ada siswa yang sedang ujian
+              {kelasFilter === "all"
+                ? "Tidak ada siswa yang sedang ujian"
+                : `Tidak ada siswa Kelas ${kelasFilter} yang ujian`}
             </div>
             <div className="mt-0.5 text-sm text-slate-400">
               Data akan muncul otomatis saat siswa memulai ujian
@@ -273,39 +335,41 @@ const LiveMonitor = () => {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {sessions.map((s) => {
+          {visibleSessions.map((s) => {
             const progress =
               s.totalQuestions > 0
                 ? Math.round(((s.currentIndex + 1) / s.totalQuestions) * 100)
                 : 0;
             const isLowTime = (s.timeLeft || 0) < 300;
             const idleSec = getIdleSeconds(s);
-            const isOffline = idleSec > 120; // 2 menit tidak ada heartbeat
-            const isIdle = idleSec > 45 && idleSec <= 120; // 45 detik diam
+            const isOffline = idleSec > 120;
+            const isIdle = idleSec > 45 && idleSec <= 120;
+
+            // Status accent for border & progress
+            const accent = isOffline
+              ? { border: "border-slate-200", bg: "bg-slate-50/50", progress: "bg-slate-400" }
+              : isIdle
+              ? { border: "border-amber-200", bg: "bg-white", progress: "bg-amber-400" }
+              : { border: "border-slate-200", bg: "bg-white", progress: "bg-gradient-to-r from-indigo-500 to-violet-500" };
 
             return (
               <div
                 key={s.id}
-                className={`relative overflow-hidden rounded-[22px] border transition-all duration-300 ${
-                  isOffline
-                    ? "border-slate-200 bg-slate-50 opacity-70 grayscale-[0.5]"
-                    : "border-slate-200 bg-white shadow-sm hover:border-indigo-300 hover:shadow-md"
-                }`}
+                className={`relative overflow-hidden rounded-[22px] border transition-all duration-300 shadow-sm ${accent.border} ${accent.bg} ${isOffline ? "opacity-75" : "hover:shadow-md"}`}
               >
-                {/* Offline Overlay Overlay */}
                 {isOffline && (
-                  <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center bg-slate-100 py-1 text-[10px] font-bold text-slate-500">
+                  <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center bg-slate-100/80 backdrop-blur-sm py-1 text-[10px] font-bold text-slate-500">
                     <i className="fas fa-plug-circle-xmark mr-1.5" />
                     KEMUNGKINAN OFFLINE / TAB DITUTUP
                   </div>
                 )}
 
-                  <div className={`p-5 ${isOffline ? "pt-8" : ""}`}>
-                  {/* Top row */}
+                <div className={`p-5 ${isOffline ? "pt-8" : ""}`}>
+                  {/* ─── Identity Row ─── */}
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <div 
+                        <div
                           className="font-bold text-slate-900 leading-tight truncate text-sm sm:text-base"
                           title={s.studentName}
                         >
@@ -316,7 +380,7 @@ const LiveMonitor = () => {
                         ) : isIdle ? (
                           <span className="flex h-2 w-2 shrink-0 rounded-full bg-amber-400 animate-pulse" />
                         ) : (
-                          <span className="flex h-2 w-2 shrink-0 rounded-full bg-green-500 animate-pulse" />
+                          <span className="flex h-2 w-2 shrink-0 rounded-full bg-emerald-500 animate-pulse" />
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
@@ -328,8 +392,14 @@ const LiveMonitor = () => {
                       </div>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         {s.tabSwitches > 0 && (
-                          <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${s.tabSwitches > 3 ? "bg-red-50 text-red-600 border border-red-100" : "bg-amber-50 text-amber-600 border border-amber-100"}`}>
-                            <i className="fas fa-warning" />
+                          <span
+                            className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                              s.tabSwitches > 3
+                                ? "bg-red-50 text-red-600 border border-red-100"
+                                : "bg-amber-50 text-amber-600 border border-amber-100"
+                            }`}
+                          >
+                            <i className="fas fa-triangle-exclamation" />
                             {s.tabSwitches}x Pindah Tab
                           </span>
                         )}
@@ -347,9 +417,7 @@ const LiveMonitor = () => {
                             : "bg-orange-50 text-orange-700 border border-orange-100"
                         }`}
                       >
-                        {(s.subtes || "literasi") === "literasi"
-                          ? "Lit"
-                          : "Num"}
+                        {(s.subtes || "literasi") === "literasi" ? "Lit" : "Num"}
                       </span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-tight ${
@@ -363,37 +431,31 @@ const LiveMonitor = () => {
                     </div>
                   </div>
 
-                  {/* Progress bar */}
+                  {/* ─── Progress ─── */}
                   <div className="mb-1 flex justify-between text-xs font-semibold text-slate-500">
-                    <span>
-                      Soal {(s.currentIndex || 0) + 1} / {s.totalQuestions || "?"}
-                    </span>
+                    <span>Soal {(s.currentIndex || 0) + 1} / {s.totalQuestions || "?"}</span>
                     <span>{progress}%</span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        isOffline ? "bg-slate-400" : "bg-indigo-50"
-                      }`}
+                      className={`h-full rounded-full transition-all duration-500 ${accent.progress}`}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
 
-                  {/* Timer */}
+                  {/* ─── Timer ─── */}
                   {s.mode !== "latihan" && (
                     <div
-                      className={`mt-3 flex items-center gap-1.5 text-xs font-bold ${
+                      className={`mt-3 flex items-center gap-1.5 text-xs font-bold tabular-nums ${
                         isLowTime ? "text-red-600" : "text-slate-600"
                       }`}
                     >
-                      <i
-                        className={`fas fa-clock text-xs ${isLowTime ? "animate-pulse" : ""}`}
-                      />
+                      <i className={`fas fa-clock text-xs ${isLowTime ? "animate-pulse" : ""}`} />
                       {fmtTime(s.timeLeft)} tersisa
                     </div>
                   )}
 
-                  {/* Remote Actions */}
+                  {/* ─── Remote Actions ─── */}
                   <div className="mt-5 flex items-center gap-2 border-t border-slate-100 pt-4">
                     {s.forceSubmit ? (
                       <div className="flex-1 flex items-center gap-2 text-[10px] sm:text-[11px] font-bold text-red-500 bg-red-50 px-3 py-2 rounded-xl border border-red-100">
@@ -432,7 +494,7 @@ const LiveMonitor = () => {
                           className={`flex items-center gap-2 rounded-xl px-4 py-2 text-[11px] font-bold transition shadow-sm ${
                             isOffline
                               ? "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
-                              : "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 hover:shadow-red-100"
+                              : "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100"
                           }`}
                         >
                           <i className={`fas ${isOffline ? "fa-trash-can" : "fa-power-off"} text-[10px]`} />
@@ -447,6 +509,31 @@ const LiveMonitor = () => {
           })}
         </div>
       )}
+    </div>
+  );
+};
+
+/* ═══════════ Stat Pill ═══════════ */
+const TONE_MAP = {
+  emerald: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
+  amber: { bg: "bg-amber-50", border: "border-amber-100", text: "text-amber-700", dot: "bg-amber-500" },
+  slate: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-600", dot: "bg-slate-400" },
+  rose: { bg: "bg-rose-50", border: "border-rose-100", text: "text-rose-700", dot: "bg-rose-500" },
+};
+const StatPill = ({ icon, tone = "slate", label, value, pulse = false }) => {
+  const c = TONE_MAP[tone] || TONE_MAP.slate;
+  return (
+    <div className={`flex items-center gap-3 rounded-2xl border ${c.border} ${c.bg} p-4`}>
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm border ${c.border}`}>
+        <i className={`fas ${icon} text-sm ${c.text}`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-2xl font-black tabular-nums ${c.text}`}>{value}</span>
+          {pulse && value > 0 && <span className={`h-2 w-2 rounded-full ${c.dot} animate-pulse`} />}
+        </div>
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
+      </div>
     </div>
   );
 };

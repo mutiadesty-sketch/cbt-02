@@ -16,6 +16,7 @@ import { useAuthStore } from "../../store/authStore";
 import { toastSuccess, toastError } from "../../lib/notify";
 import { logActivity } from "../../lib/activityLog";
 import EmptyState from "../../ui/EmptyState";
+import PageHeader from "../../components/admin/PageHeader";
 
 const TYPE_OPTIONS = [
   { value: "info", label: "ℹ️ Informasi", bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", icon: "fa-circle-info" },
@@ -114,24 +115,17 @@ const Announcements = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800">Daftar Pengumuman</h2>
-          <p className="mt-1 text-sm text-slate-500 font-medium">
-            Buat dan kelola informasi yang akan dilihat oleh semua siswa di dashboard mereka
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-50"></span>
-            </span>
-            <span className="text-xs font-bold text-emerald-700">
-              {announcements.filter((a) => a.isActive).length} Pengumuman Aktif
-            </span>
-          </div>
+      <PageHeader
+        icon="fa-bullhorn"
+        iconTone="amber"
+        title="Daftar Pengumuman"
+        subtitle="Buat dan kelola informasi yang akan dilihat oleh semua siswa di dashboard mereka"
+        badge={{
+          label: `${announcements.filter((a) => a.isActive).length} Aktif`,
+          tone: "emerald",
+          icon: "fa-circle",
+        }}
+        actions={
           <button
             onClick={() => setShowForm(!showForm)}
             className={`flex h-[42px] items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold transition-all w-full md:w-auto ${
@@ -143,8 +137,8 @@ const Announcements = () => {
             <i className={`fas ${showForm ? "fa-times" : "fa-plus"}`} />
             {showForm ? "Batal Tambah" : "Buat Baru"}
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {showForm && (
         <div className="animate-in fade-in slide-in-from-top-4 mb-6 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-b from-indigo-50/50 to-white p-1">

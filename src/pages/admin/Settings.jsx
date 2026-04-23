@@ -14,6 +14,8 @@ import Button from "../../ui/Button";
 import { DEFAULT_EXAM_CONFIG } from "../../lib/examConfig";
 import { logActivity } from "../../lib/activityLog";
 import { useAuthStore } from "../../store/authStore";
+import PageHeader from "../../components/admin/PageHeader";
+import BackupPanel from "../../components/admin/BackupPanel";
 
 /* ── Toggle Switch Component ── */
 const ToggleSwitch = ({ checked, onChange, label, description, accentColor = "indigo" }) => {
@@ -176,6 +178,17 @@ const Settings = ({ onPreview }) => {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        icon="fa-sliders"
+        iconTone="indigo"
+        title="Pengaturan Ujian"
+        subtitle="Atur identitas, jadwal, dan perilaku ujian untuk semua siswa"
+        badge={{
+          label: config.isActive ? "Ujian Aktif" : "Ujian Nonaktif",
+          tone: config.isActive ? "emerald" : "slate",
+          icon: config.isActive ? "fa-circle" : "fa-circle-pause",
+        }}
+      />
 
       {/* ═══ SECTION 1: IDENTITAS UJIAN ═══ */}
       <SectionCard
@@ -401,6 +414,9 @@ const Settings = ({ onPreview }) => {
         <i className={`fas ${isSaving ? "fa-spinner fa-spin" : "fa-save"} mr-2`} />
         {isSaving ? "Menyimpan Pengaturan..." : "Simpan Semua Pengaturan"}
       </button>
+
+      {/* ═══ BACKUP ═══ */}
+      <BackupPanel />
 
       {/* ═══ DANGER ZONE ═══ */}
       <div className="overflow-hidden rounded-3xl border-2 border-red-200 bg-red-50 p-6 md:p-8 shadow-sm">

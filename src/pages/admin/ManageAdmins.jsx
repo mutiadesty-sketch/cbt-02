@@ -13,6 +13,7 @@ import Button from "../../ui/Button";
 import EmptyState from "../../ui/EmptyState";
 import { toastSuccess, toastError } from "../../lib/notify";
 import { logActivity } from "../../lib/activityLog";
+import PageHeader from "../../components/admin/PageHeader";
 import { useAuthStore } from "../../store/authStore";
 
 const ManageAdmins = () => {
@@ -79,13 +80,12 @@ const ManageAdmins = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-black text-slate-800">Manajemen Admin</h2>
-        <p className="mt-1 text-sm font-medium text-slate-500">
-          Kelola siapa saja yang bisa mengakses dashboard admin
-        </p>
-      </div>
+      <PageHeader
+        icon="fa-user-shield"
+        iconTone="indigo"
+        title="Manajemen Admin"
+        subtitle="Kelola siapa saja yang bisa mengakses dashboard admin"
+      />
 
       {/* Add Admin Form */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">

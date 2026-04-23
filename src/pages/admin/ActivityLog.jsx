@@ -3,6 +3,7 @@ import { db } from "../../lib/firebase";
 import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
 import { ACTION_META } from "../../lib/activityLog";
 import EmptyState from "../../ui/EmptyState";
+import PageHeader from "../../components/admin/PageHeader";
 
 const ActivityLog = () => {
   const [logs, setLogs] = useState([]);
@@ -55,23 +56,17 @@ const ActivityLog = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800">Activity Log</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">
-            Riwayat semua aksi admin di platform
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
-            <i className="fas fa-list text-xs text-indigo-500" />
-            <span className="text-xs font-bold text-indigo-700">
-              {filteredLogs.length} Aktivitas
-            </span>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon="fa-clock-rotate-left"
+        iconTone="violet"
+        title="Activity Log"
+        subtitle="Riwayat semua aksi admin di platform"
+        badge={{
+          label: `${filteredLogs.length} Aktivitas`,
+          tone: "violet",
+          icon: "fa-list",
+        }}
+      />
 
       {/* Filter */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
