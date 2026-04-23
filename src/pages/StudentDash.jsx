@@ -366,7 +366,7 @@ const StudentDash = () => {
             } />
             <Route path="history" element={<HistoryTab history={history} loading={loading} examConfig={examConfig} />} />
             <Route path="ranking" element={<RankingTab leaderboard={leaderboard} lbLoading={lbLoading} fetchLeaderboard={fetchLeaderboard} userId={user?.id} />} />
-            <Route path="profile" element={<ProfileTab user={user} />} />
+            <Route path="profile" element={<ProfileTab user={user} history={history} examConfig={examConfig} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </div>

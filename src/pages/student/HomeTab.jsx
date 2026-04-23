@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { getPassScore } from "../../lib/examConfig";
 import { AnimatedNumber } from "../../lib/useAnimatedCounter";
+import { getDailyTip } from "../../lib/achievements";
 
 /* ── Skeleton ──────────────────────────────────────────── */
 const SkeletonCard = () => (
@@ -69,58 +70,77 @@ const HomeTab = ({
   /* stats */
   const avgScore = history.length
     ? Math.round(history.reduce((s, h) => s + (h.score || 0), 0) / history.length) : null;
-  const recentExams = history.slice(0, 5);
+  const passedCount = history.filter(
+    (h) => (h.score ?? 0) >= (h.passScore ?? getPassScore(examConfig)),
+  ).length;
+
+  /* daily tip (rotates every day) */
+  const dailyTip = useMemo(() => getDailyTip(), []);
 
   return (
     <div className="space-y-5">
 
       {/* ══════ COUNTDOWN TIMER ══════ */}
-      {countdown && (
-        <div className={`rounded-3xl border p-5 animate-fade-in-up ${
-          countdown.type === "start"
-            ? "border-amber-200 bg-amber-100"
-            : "border-emerald-200 bg-emerald-100"
-        }`}>
-          <div className="flex items-center gap-2 mb-4">
-            <i className={`fas ${countdown.type === "start" ? "fa-hourglass-half text-amber-500 animate-pulse" : "fa-clock text-emerald-500"} text-base`} />
-            <span className={`text-xs font-bold uppercase tracking-widest ${countdown.type === "start" ? "text-amber-600" : "text-emerald-600"}`}>
-              {countdown.type === "start" ? "Ujian dimulai dalam" : "Waktu tersisa"}
-            </span>
-          </div>
-          {(() => {
-            const t = formatCountdown(countdown.diff);
-            const units = [
-              ...(t.days > 0 ? [{ v: t.days, l: "Hari" }] : []),
-              { v: t.hours, l: "Jam"   },
-              { v: t.mins,  l: "Menit" },
-              { v: t.secs,  l: "Detik", urgent: countdown.type === "end" && t.hours === 0 && t.mins < 10 },
-            ];
-            return (
-              <div className="flex items-center justify-center gap-2">
-                {units.map((u, i) => (
-                  <React.Fragment key={u.l}>
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-md text-xl font-black ${u.urgent ? "text-red-500 animate-pulse" : "text-slate-900"}`}>
-                        {String(u.v).padStart(2, "0")}
-                      </div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{u.l}</span>
+      {countdown && (() => {
+        const t = formatCountdown(countdown.diff);
+        const urgent = countdown.type === "end" && t.hours === 0 && t.mins < 10;
+        const isStart = countdown.type === "start";
+        const units = [
+          ...(t.days > 0 ? [{ v: t.days, l: "Hari" }] : []),
+          { v: t.hours, l: "Jam" },
+          { v: t.mins, l: "Menit" },
+          { v: t.secs, l: "Detik" },
+        ];
+        // Dynamic palette — urgent state turns red
+        const palette = urgent
+          ? {
+              border: "border-red-200",
+              bg: "bg-gradient-to-br from-red-50 to-rose-50",
+              label: "text-red-600",
+              icon: "fa-circle-exclamation text-red-500 animate-pulse",
+              value: "text-red-600",
+            }
+          : isStart
+          ? {
+              border: "border-amber-200",
+              bg: "bg-gradient-to-br from-amber-50 to-orange-50",
+              label: "text-amber-600",
+              icon: "fa-hourglass-half text-amber-500 animate-pulse",
+              value: "text-slate-900",
+            }
+          : {
+              border: "border-emerald-200",
+              bg: "bg-gradient-to-br from-emerald-50 to-teal-50",
+              label: "text-emerald-600",
+              icon: "fa-clock text-emerald-500",
+              value: "text-slate-900",
+            };
+        return (
+          <div className={`rounded-3xl border p-4 sm:p-5 animate-fade-in-up ${palette.border} ${palette.bg}`}>
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <i className={`fas ${palette.icon} text-sm`} />
+              <span className={`text-[11px] font-bold uppercase tracking-widest ${palette.label}`}>
+                {urgent ? "Segera berakhir!" : isStart ? "Ujian dimulai dalam" : "Waktu tersisa"}
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-1.5">
+              {units.map((u, i) => (
+                <React.Fragment key={u.l}>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className={`flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-white shadow-sm text-lg sm:text-xl font-black tabular-nums ${palette.value} ${urgent ? "ring-1 ring-red-200" : ""}`}>
+                      {String(u.v).padStart(2, "0")}
                     </div>
-                    {i < units.length - 1 && (
-                      <span className="text-xl font-black text-slate-200 mb-4">:</span>
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            );
-          })()}
-          {countdown.type === "start" && (
-            <p className="mt-4 text-center text-xs text-amber-600/70">
-              <i className="fas fa-info-circle mr-1" />
-              Ujian akan dibuka otomatis saat waktu tiba
-            </p>
-          )}
-        </div>
-      )}
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">{u.l}</span>
+                  </div>
+                  {i < units.length - 1 && (
+                    <span className="text-lg font-black text-slate-300 mb-4">:</span>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════ EXAM HERO CARD ══════ */}
       {configLoading ? (
@@ -255,23 +275,49 @@ const HomeTab = ({
       )}
 
       {/* ══════ QUICK STATS ══════ */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 animate-fade-in-up delay-200">
+      <div className="grid grid-cols-3 gap-3 animate-fade-in-up delay-200">
         <StatCard
           icon="fa-file-alt"
           iconBg="bg-indigo-100"
           iconColor="text-indigo-600"
           label="Total Ujian"
           value={loading ? "–" : history.length}
-          className="col-span-2 md:col-span-1"
         />
         <StatCard
           icon="fa-star"
           iconBg="bg-amber-100"
           iconColor="text-amber-600"
-          label="Rata-rata Nilai"
+          label="Rata-rata"
           value={loading ? "–" : (avgScore !== null ? avgScore : "–")}
-          className="col-span-2 md:col-span-2"
         />
+        <StatCard
+          icon="fa-circle-check"
+          iconBg="bg-emerald-100"
+          iconColor="text-emerald-600"
+          label="Lulus"
+          value={loading ? "–" : passedCount}
+        />
+      </div>
+
+      {/* ══════ DAILY TIP ══════ */}
+      <div className="relative overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 p-5 animate-fade-in-up delay-200">
+        <div className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-amber-200/40 blur-2xl" />
+        <div className="relative flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md">
+            <i className={`fas ${dailyTip.icon} text-base text-white`} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600">
+              Tips Hari Ini
+            </div>
+            <div className="mt-0.5 text-sm font-bold text-slate-900">
+              {dailyTip.title}
+            </div>
+            <div className="mt-1 text-xs leading-relaxed text-slate-600">
+              {dailyTip.body}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ══════ QUICK ACTIONS ══════ */}
