@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { db } from "../../lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import EmptyState from "../../ui/EmptyState";
+import PageHeader from "../../components/admin/PageHeader";
 import { getSubtesLabel, getSubtesBadgeClass, isTKA, MAPEL_LIST } from "../../lib/examConfig";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -148,13 +149,12 @@ const ItemAnalysis = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-black text-slate-800">Analisis Butir Soal</h2>
-        <p className="mt-1 text-sm font-medium text-slate-500">
-          Statistik tingkat kesulitan dan distribusi pola jawaban peserta per soal
-        </p>
-      </div>
+      <PageHeader
+        icon="fa-microscope"
+        iconTone="violet"
+        title="Analisis Butir Soal"
+        subtitle="Statistik tingkat kesulitan dan distribusi pola jawaban peserta per soal"
+      />
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">

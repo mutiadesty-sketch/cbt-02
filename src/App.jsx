@@ -10,14 +10,20 @@ import ExamRoom from "./pages/ExamRoom";
 import ResultsView from "./pages/ResultsView";
 import BootLoader from "./components/BootLoader";
 import OfflineBanner from "./ui/OfflineBanner";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
 
 import { isAllowedAdmin } from "./lib/auth";
 
-// Result wrapper to extract ID from params
+// Minimum boot time in ms to avoid content flash on fast connections
+const MIN_BOOT_MS = 600;
+
+// Result wrapper — only accessible to any authenticated user (student or admin)
 const ResultWrapper = () => {
   const { id } = useParams();
+  const { user } = useAuthStore();
+  if (!user) return <Navigate to="/login" replace />;
   return (
     <>
       <OfflineBanner />
@@ -29,15 +35,15 @@ const ResultWrapper = () => {
 // Protected route component
 const ProtectedRoute = ({ children, allowedRole }) => {
   const { user, role } = useAuthStore();
-  
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  
+
   if (allowedRole && role !== allowedRole) {
     return <Navigate to="/" replace />;
   }
-  
+
   return (
     <>
       <OfflineBanner />
@@ -55,7 +61,7 @@ function AnimatedRoutes() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setMinLoadingDone(true);
-    }, 2800);
+    }, MIN_BOOT_MS);
     return () => clearTimeout(timer);
   }, []);
 
@@ -121,9 +127,11 @@ function AnimatedRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AnimatedRoutes />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AnimatedRoutes />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 
