@@ -9,8 +9,8 @@ import {
   query,
   where,
   orderBy,
+  limit,
   doc,
-  getDoc,
   onSnapshot,
 } from "firebase/firestore";
 import Page from "../ui/Page";
@@ -161,22 +161,39 @@ const StudentDash = () => {
   const handleMarkAllRead = useCallback(() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true }))), []);
 
   /* ── Leaderboard ─────────────────────────────────────── */
+  // Only pull top 200 tryout results by score, then dedupe per student on the client.
+  // This avoids reading the entire results collection (expensive as it grows).
   const fetchLeaderboard = async () => {
     setLbLoading(true);
     try {
-      const snap = await getDocs(collection(db, "results"));
+      const q = query(
+        collection(db, "results"),
+        where("mode", "==", "tryout"),
+        orderBy("score", "desc"),
+        limit(200),
+      );
+      const snap = await getDocs(q);
       const byStudent = {};
       snap.forEach((d) => {
         const r = d.data();
-        if (r.mode === "latihan") return;
         const sid = r.studentId;
-        if (!byStudent[sid] || r.score > byStudent[sid].score) {
-          byStudent[sid] = { studentId: sid, studentName: r.studentName, kelas: r.kelas, score: r.score };
+        if (!sid) return;
+        // Since results are ordered by score desc, the first one per student is already the best.
+        if (!byStudent[sid]) {
+          byStudent[sid] = {
+            studentId: sid,
+            studentName: r.studentName,
+            kelas: r.kelas,
+            score: r.score,
+          };
         }
       });
-      setLeaderboard(Object.values(byStudent).sort((a, b) => b.score - a.score).slice(0, 10));
-    } catch (e) { console.error(e); }
-    finally { setLbLoading(false); }
+      setLeaderboard(Object.values(byStudent).slice(0, 10));
+    } catch (e) {
+      console.error("[CBT] Leaderboard error:", e);
+    } finally {
+      setLbLoading(false);
+    }
   };
   useEffect(() => { if (active === "ranking") fetchLeaderboard(); }, [active]);
 

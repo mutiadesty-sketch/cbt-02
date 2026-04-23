@@ -7,11 +7,6 @@ import Swal from "sweetalert2";
 import { isAllowedAdmin } from "../lib/auth";
 import { playSound } from "../lib/soundUtils";
 
-/* ── Decorative floating shape ── */
-const FloatShape = ({ className }) => (
-  <div className={`absolute rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-float ${className}`} />
-);
-
 const Login = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
